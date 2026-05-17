@@ -65,10 +65,15 @@ class MediaPipeEstimator:
         model_path = _ensure_pose_model()
         
         # 修复包含中文路径导致 MediaPipe 底层 C++ 加载模型崩溃从而抛出 0xC0000409 错误的问题
+        # 同时强制 CPU delegate 避免 TfLite XNNPACK 不兼容导致的启动缓慢
+        os.environ.setdefault('MEDIAPIPE_CPU_ONLY', '1')
         try:
             with open(model_path, "rb") as f:
                 model_bytes = f.read()
-            base_options = MpBaseOptions(model_asset_buffer=model_bytes)
+            base_options = MpBaseOptions(
+                model_asset_buffer=model_bytes,
+                delegate=MpBaseOptions.Delegate.CPU,
+            )
         except Exception as e:
             print(f"[MediaPipe] 读取模型文件失败: {e}")
             print(f"[MediaPipe] 尝试使用路径方式加载...")
