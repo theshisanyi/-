@@ -176,7 +176,7 @@ def optimize_model(model_path=None, save_path=None, pruning_rate=0.3,
     print(f"[优化] PT模型已保存: {pt_path}")
 
     print(f"\n{'=' * 60}")
-    print(f"✓ 模型优化完成!")
+    print(f"[OK] 模型优化完成!")
     print(f"  ONNX模型: {onnx_path}")
     print(f"  PT模型: {pt_path}")
     print(f"{'=' * 60}")

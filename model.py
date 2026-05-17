@@ -417,4 +417,4 @@ if __name__ == "__main__":
 
     probs = F.softmax(output, dim=-1)
     print(f"预测概率: {probs[0].detach().numpy()}")
-    print(f"\n✓ 模型测试通过!")
+    print(f"\n[OK] 模型测试通过!")

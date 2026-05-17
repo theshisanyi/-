@@ -17,7 +17,7 @@ import time
 import numpy as np
 from collections import deque
 
-# ★ Windows DLL冲突修复: onnxruntime 必须在 torch 之前导入
+# Windows DLL冲突修复: onnxruntime 必须在 torch 之前导入
 # 否则 torch 的 DLL 搜索路径会导致 onnxruntime 加载失败 (WinError 1114)
 try:
     import onnxruntime
@@ -244,7 +244,7 @@ class RealTimeTab(QWidget):
                 border-radius: 12px;
             }
         """)
-        self.video_label.setText("📷 点击「开始识别」启动摄像头")
+        self.video_label.setText("[Camera] 点击「开始识别」启动摄像头")
         left_panel.addWidget(self.video_label)
 
         # 控制按钮
@@ -336,12 +336,12 @@ class RealTimeTab(QWidget):
         fb_layout = QVBoxLayout(fb_group)
         fb_btn_layout = QHBoxLayout()
 
-        self.btn_correct = QPushButton("✓ 正确")
+        self.btn_correct = QPushButton("[OK] 正确")
         self.btn_correct.setObjectName("btnSuccess")
         self.btn_correct.setMinimumHeight(36)
         self.btn_correct.clicked.connect(self.on_correct)
 
-        self.btn_wrong = QPushButton("✗ 错误")
+        self.btn_wrong = QPushButton("[X] 错误")
         self.btn_wrong.setObjectName("btnDanger")
         self.btn_wrong.setMinimumHeight(36)
         self.btn_wrong.clicked.connect(self.on_wrong)
@@ -387,7 +387,7 @@ class RealTimeTab(QWidget):
 
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
-        self.video_label.setText("📷 已停止，点击「开始识别」重新启动")
+        self.video_label.setText("[Camera] 已停止，点击「开始识别」重新启动")
 
     def _show_frame(self, frame):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -432,7 +432,7 @@ class RealTimeTab(QWidget):
 
     def on_video_error(self, error_msg):
         self.stop_recognition()
-        self.video_label.setText(f"⚠ 初始化失败: {error_msg}")
+        self.video_label.setText(f"[!] 初始化失败: {error_msg}")
 
     def on_mode_changed(self, index):
         modes = ["rule", "dl", "hybrid"]
@@ -471,14 +471,14 @@ class VideoAnalysisTab(QWidget):
 
         # 上部: 视频选择
         top_layout = QHBoxLayout()
-        self.btn_select = QPushButton("📁 选择视频文件")
+        self.btn_select = QPushButton("[File] 选择视频文件")
         self.btn_select.setMinimumHeight(42)
         self.btn_select.clicked.connect(self.select_video)
 
         self.path_label = QLabel("未选择文件")
         self.path_label.setStyleSheet("color: #8888aa;")
 
-        self.btn_analyze = QPushButton("🔍 开始分析")
+        self.btn_analyze = QPushButton("[Analyze] 开始分析")
         self.btn_analyze.setMinimumHeight(42)
         self.btn_analyze.setEnabled(False)
         self.btn_analyze.clicked.connect(self.start_analysis)
@@ -526,7 +526,7 @@ class VideoAnalysisTab(QWidget):
         self.result_text.setMinimumWidth(300)
         self.result_text.setHtml("""
             <div style='color:#8888aa; padding:20px; text-align:center;'>
-            <h3>📊 分析结果</h3>
+            <h3>[Stats] 分析结果</h3>
             <p>选择视频文件后点击"开始分析"</p>
             </div>
         """)
@@ -605,7 +605,7 @@ class VideoAnalysisTab(QWidget):
         total = sum(action_counts.values())
 
         html = "<div style='color:#ccccdd; padding:10px;'>"
-        html += "<h3 style='color:#00d4ff;'>📊 视频分析报告</h3>"
+        html += "<h3 style='color:#00d4ff;'>[Stats] 视频分析报告</h3>"
         html += f"<p>总帧数: {total}</p><hr>"
 
         for name, count in sorted(action_counts.items(), key=lambda x: -x[1]):
@@ -755,7 +755,7 @@ class FeedbackTab(QWidget):
         self.feedback_progress.setFormat("缓冲区: %v / 100 (%p%)")
         progress_layout.addWidget(self.feedback_progress)
 
-        self.btn_force_train = QPushButton("🧠 立即触发微调")
+        self.btn_force_train = QPushButton("[Train] 立即触发微调")
         self.btn_force_train.setMinimumHeight(42)
         self.btn_force_train.clicked.connect(self.force_train)
         progress_layout.addWidget(self.btn_force_train)
@@ -814,15 +814,15 @@ class FeedbackTab(QWidget):
         pct = int(epoch / max(total, 1) * 100)
         self.train_progress.setValue(pct)
         self.train_log.append(f"Epoch {epoch}/{total} | Loss: {loss:.4f}")
-        self.learn_status_label.setText(f"🔄 训练中... Epoch {epoch}/{total}")
+        self.learn_status_label.setText(f"[...] 训练中... Epoch {epoch}/{total}")
 
     def on_train_complete(self, success):
         if success:
-            self.learn_status_label.setText("✓ 微调完成, 模型已更新")
+            self.learn_status_label.setText("[OK] 微调完成, 模型已更新")
             self.learn_status_label.setStyleSheet("color: #00ff88; font-size: 14px;")
-            self.train_log.append("✓ 模型微调成功, 已热更新!")
+            self.train_log.append("[OK] 模型微调成功, 已热更新!")
         else:
-            self.learn_status_label.setText("✗ 微调失败")
+            self.learn_status_label.setText("[X] 微调失败")
             self.learn_status_label.setStyleSheet("color: #ff4444; font-size: 14px;")
 
     def force_train(self):
@@ -854,10 +854,10 @@ class ArchitectureTab(QWidget):
         return """
         <div style='color:#ccccdd; padding:16px; font-family:Segoe UI,Microsoft YaHei,sans-serif;'>
 
-        <h2 style='color:#00d4ff; text-align:center;'>🧠 ST-GCN + Transformer 混合模型架构</h2>
+        <h2 style='color:#00d4ff; text-align:center;'>ST-GCN + Transformer 混合模型架构</h2>
         <hr style='border-color:#2a2a4a;'>
 
-        <h3 style='color:#00ff88;'>📐 整体架构流程</h3>
+        <h3 style='color:#00ff88;'>[Arch] 整体架构流程</h3>
         <pre style='color:#aaddff; background:#12122a; padding:16px;
                     border-radius:8px; font-size:13px; line-height:1.6;'>
 ┌──────────────────────────────────────────────────┐
@@ -932,7 +932,7 @@ class ArchitectureTab(QWidget):
 
         <hr style='border-color:#2a2a4a;'>
 
-        <h3 style='color:#00ff88;'>🦴 MediaPipe 33个人体关键点</h3>
+        <h3 style='color:#00ff88;'>[Skeleton] MediaPipe 33个人体关键点</h3>
         <pre style='color:#aaddff; background:#12122a; padding:16px;
                     border-radius:8px; font-size:12px; line-height:1.5;'>
                     ● 0 鼻子
@@ -960,7 +960,7 @@ class ArchitectureTab(QWidget):
 
         <hr style='border-color:#2a2a4a;'>
 
-        <h3 style='color:#00ff88;'>🔄 系统三层架构</h3>
+        <h3 style='color:#00ff88;'>[Layers] 系统三层架构</h3>
         <table style='color:#ccccdd; width:100%; border-collapse:collapse;'>
         <tr style='background:#1a1a2e;'>
             <th style='padding:10px; border:1px solid #2a2a4a; color:#00d4ff;'>层次</th>
@@ -981,7 +981,7 @@ class ArchitectureTab(QWidget):
 
         <hr style='border-color:#2a2a4a;'>
 
-        <h3 style='color:#00ff88;'>🎯 10种可识别行为</h3>
+        <h3 style='color:#00ff88;'>[Actions] 10种可识别行为</h3>
         <table style='color:#ccccdd; width:100%; border-collapse:collapse;'>
         <tr style='background:#1a1a2e;'>
             <th style='padding:8px; border:1px solid #2a2a4a; color:#00d4ff;'>编号</th>
@@ -1038,7 +1038,7 @@ class ArchitectureTab(QWidget):
 
         <hr style='border-color:#2a2a4a;'>
 
-        <h3 style='color:#00ff88;'>⚡ 创新技术要点</h3>
+        <h3 style='color:#00ff88;'>[Key] 创新技术要点</h3>
         <ul style='line-height:2;'>
         <li><b style='color:#ffaa00;'>自适应图卷积:</b> 结合固定拓扑 + 可学习 + 数据驱动注意力</li>
         <li><b style='color:#ffaa00;'>时序自适应采样:</b> 根据动作快慢调整处理帧数</li>
@@ -1103,7 +1103,7 @@ class MainWindow(QMainWindow):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(24, 12, 24, 12)
 
-        title = QLabel("🧠 基于深度学习的人体行为识别系统")
+        title = QLabel("[AI] 基于深度学习的人体行为识别系统")
         title.setObjectName("titleLabel")
         header_layout.addWidget(title)
 
@@ -1122,10 +1122,10 @@ class MainWindow(QMainWindow):
         self.tab_feedback = FeedbackTab(self)
         self.tab_arch = ArchitectureTab(self)
 
-        self.tabs.addTab(self.tab_realtime, "📷 实时识别")
-        self.tabs.addTab(self.tab_video, "🎬 视频分析")
-        self.tabs.addTab(self.tab_feedback, "🔄 增量学习")
-        self.tabs.addTab(self.tab_arch, "🏗️ 模型架构")
+        self.tabs.addTab(self.tab_realtime, "[Camera] 实时识别")
+        self.tabs.addTab(self.tab_video, "[Video] 视频分析")
+        self.tabs.addTab(self.tab_feedback, "[Learn] 增量学习")
+        self.tabs.addTab(self.tab_arch, "[Arch] 模型架构")
 
         main_layout.addWidget(self.tabs)
 
@@ -1163,19 +1163,19 @@ class MainWindow(QMainWindow):
                     if self.feedback_buffer.is_full():
                         self.trigger_incremental_learning()
             else:
-                self.tab_feedback.train_log.append("⚠ 反馈数据不足: 请在识别一段时间后再纠正")
+                self.tab_feedback.train_log.append("[!] 反馈数据不足: 请在识别一段时间后再纠正")
         else:
-            self.tab_feedback.train_log.append("收到反馈: 结果正确 ✓")
+            self.tab_feedback.train_log.append("收到反馈: 结果正确 [OK]")
 
     def trigger_incremental_learning(self, force=False):
         if self.bg_updater and self.bg_updater.is_running():
-            self.tab_feedback.train_log.append("⚠ 微调正在进行中, 请稍候...")
+            self.tab_feedback.train_log.append("[!] 微调正在进行中, 请稍候...")
             return
         if not force and self.feedback_buffer.size() < 5:
-            self.tab_feedback.train_log.append("⚠ 反馈数据不足 (至少需要5条)")
+            self.tab_feedback.train_log.append("[!] 反馈数据不足 (至少需要5条)")
             return
-        self.tab_feedback.train_log.append("🧠 触发EWC增量学习...")
-        self.tab_feedback.learn_status_label.setText("🔄 正在微调...")
+        self.tab_feedback.train_log.append("[Train] 触发EWC增量学习...")
+        self.tab_feedback.learn_status_label.setText("[...] 正在微调...")
         
         def _bridge_progress(epoch, total, loss):
             self.train_progress_signal.emit(epoch, total, loss)

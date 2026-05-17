@@ -358,4 +358,4 @@ if __name__ == "__main__":
         "projection_dim": 64,
     })
 
-    print("\n✓ 预训练完成!")
+    print("\n[OK] 预训练完成!")

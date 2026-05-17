@@ -237,7 +237,7 @@ def train(train_data, train_labels, val_data=None, val_labels=None,
             if val_acc > best_val_acc:
                 best_val_acc = val_acc
                 torch.save(model.state_dict(), best_model_path)
-                print(f"  ★ 最优模型已保存 (Val Acc: {val_acc:.4f})")
+                print(f"  [BEST] 最优模型已保存 (Val Acc: {val_acc:.4f})")
         else:
             # 无验证集时保存最新模型
             torch.save(model.state_dict(), best_model_path)
@@ -377,4 +377,4 @@ if __name__ == "__main__":
         }
     )
 
-    print("\n✓ 训练完成!")
+    print("\n[OK] 训练完成!")
