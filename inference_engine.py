@@ -118,8 +118,10 @@ class ONNXInferenceEngine:
             try:
                 sess_options = ort.SessionOptions()
                 sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                with open(path, "rb") as f:
+                    model_bytes = f.read()
                 self.session = ort.InferenceSession(
-                    path, sess_options=sess_options,
+                    model_bytes, sess_options=sess_options,
                     providers=['CPUExecutionProvider']
                 )
                 self.model_path = path
@@ -256,4 +258,12 @@ class HybridEngine:
         """热更新深度学习模型"""
         if self.dl_engine is not None:
             return self.dl_engine.hot_reload(model_path)
+        if ORT_AVAILABLE and model_path and os.path.exists(model_path):
+            try:
+                self.dl_engine = ONNXInferenceEngine(model_path)
+                if self.dl_engine.is_loaded():
+                    print(f"[推理引擎] 首次加载DL模型成功: {model_path}")
+                    return True
+            except Exception as e:
+                print(f"[推理引擎] 首次加载DL模型失败: {e}")
         return False

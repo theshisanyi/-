@@ -82,6 +82,7 @@ class VideoThread(QThread):
     result_ready = pyqtSignal(int, float, object)   # action_id, confidence, probs
     landmarks_ready = pyqtSignal(object)            # 原始关键点
     fps_updated = pyqtSignal(float)                 # FPS
+    error_occurred = pyqtSignal(str)
 
     def __init__(self, source=0):
         super().__init__()
@@ -103,87 +104,98 @@ class VideoThread(QThread):
 
     def run(self):
         """线程主循环"""
-        self.setup()
+        try:
+            self.setup()
+        except Exception as e:
+            error_msg = f"初始化失败: {e}"
+            print(error_msg)
+            self.error_occurred.emit(str(e))
+            return
         self.running = True
+        cap = None
+        try:
 
-        # (修复 Windows 平台摄像头在子线程中崩溃的问题: 使用 CAP_DSHOW 后端)
-        if isinstance(self.source, int):
-            if os.name == 'nt':
-                cap = cv2.VideoCapture(self.source, cv2.CAP_DSHOW)
+            # (修复 Windows 平台摄像头在子线程中崩溃的问题: 使用 CAP_DSHOW 后端)
+            if isinstance(self.source, int):
+                if os.name == 'nt':
+                    cap = cv2.VideoCapture(self.source, cv2.CAP_DSHOW)
+                else:
+                    cap = cv2.VideoCapture(self.source)
             else:
                 cap = cv2.VideoCapture(self.source)
-        else:
-            cap = cv2.VideoCapture(self.source)
 
-        if not cap.isOpened():
-            print(f"[错误] 无法打开视频源: {self.source}")
-            # 回退到默认后端
-            cap = cv2.VideoCapture(self.source)
             if not cap.isOpened():
-                return
+                print(f"[错误] 无法打开视频源: {self.source}")
+                # 回退到默认后端
+                cap = cv2.VideoCapture(self.source)
+                if not cap.isOpened():
+                    return
 
-        # 设置摄像头参数
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+            # 设置摄像头参数
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-        while self.running:
-            if self.paused:
-                self.msleep(50)
-                continue
-
-            ret, frame = cap.read()
-            if not ret:
-                if isinstance(self.source, str):
-                    # 视频文件播放完毕, 重新开始
-                    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    continue
-                else:
-                    self.msleep(10)
+            while self.running:
+                if self.paused:
+                    self.msleep(50)
                     continue
 
-            self.fps_counter.tick()
-            # 确保对帧进深拷贝，防止跨线程传递导致内存数据竞争（0xC0000409）
-            safe_frame = frame.copy()
+                ret, frame = cap.read()
+                if not ret:
+                    if isinstance(self.source, str):
+                        # 视频文件播放完毕, 重新开始
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        continue
+                    else:
+                        self.msleep(10)
+                        continue
 
-            # 姿态估计
-            landmarks = None
-            if self.estimator is not None:
-                landmarks = self.estimator.estimate(safe_frame)
+                self.fps_counter.tick()
 
-            # 绘制骨架
-            display_frame = safe_frame.copy()
-            if landmarks is not None:
-                display_frame = draw_skeleton(display_frame, landmarks)
-                self.landmarks_ready.emit(landmarks)
+                # 姿态估计
+                landmarks = None
+                display_frame = frame.copy()
+                if self.estimator is not None:
+                    landmarks = self.estimator.estimate(display_frame)
 
-                # 行为识别
-                action_id, confidence, probs, _mode = self.engine.predict(
-                    landmarks, mode=self.mode
-                )
+                if landmarks is not None:
+                    display_frame = draw_skeleton(display_frame, landmarks)
+                    self.landmarks_ready.emit(landmarks)
 
-                self.prediction_history.append((action_id, confidence))
-                smoothed_id, smoothed_conf = smooth_predictions(
-                    list(self.prediction_history)
-                )
+                    # 行为识别
+                    action_id, confidence, probs, _mode = self.engine.predict(
+                        landmarks, mode=self.mode
+                    )
 
-                # 绘制结果
-                display_frame = draw_action_label(
-                    display_frame, smoothed_id, smoothed_conf
-                )
+                    self.prediction_history.append((action_id, confidence))
+                    smoothed_id, smoothed_conf = smooth_predictions(
+                        list(self.prediction_history)
+                    )
 
-                self.result_ready.emit(smoothed_id, smoothed_conf, probs)
+                    # 绘制结果
+                    display_frame = draw_action_label(
+                        display_frame, smoothed_id, smoothed_conf
+                    )
 
-            # 绘制FPS
-            fps = self.fps_counter.get_fps()
-            display_frame = draw_fps(display_frame, fps)
-            self.fps_updated.emit(fps)
+                    self.result_ready.emit(smoothed_id, smoothed_conf, probs)
 
-            self.frame_ready.emit(display_frame)
-            self.msleep(1)  # 避免过快
+                # 绘制FPS
+                fps = self.fps_counter.get_fps()
+                display_frame = draw_fps(display_frame, fps)
+                self.fps_updated.emit(fps)
 
-        cap.release()
-        if self.estimator:
-            self.estimator.release()
+                self.frame_ready.emit(display_frame)
+                self.msleep(1)  # 避免过快
+
+        except Exception as e:
+            print(f"[错误] 视频线程异常: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            if cap is not None:
+                cap.release()
+            if self.estimator:
+                self.estimator.release()
 
     def stop(self):
         self.running = False
@@ -359,6 +371,7 @@ class RealTimeTab(QWidget):
         self.video_thread.result_ready.connect(self.update_result)
         self.video_thread.landmarks_ready.connect(self.update_landmarks)
         self.video_thread.fps_updated.connect(self.update_fps)
+        self.video_thread.error_occurred.connect(self.on_video_error)
 
         modes = ["rule", "dl", "hybrid"]
         self.video_thread.set_mode(modes[self.mode_combo.currentIndex()])
@@ -416,6 +429,10 @@ class RealTimeTab(QWidget):
 
     def update_fps(self, fps):
         self.fps_label.setText(f"FPS: {fps:.1f}")
+
+    def on_video_error(self, error_msg):
+        self.stop_recognition()
+        self.video_label.setText(f"⚠ 初始化失败: {error_msg}")
 
     def on_mode_changed(self, index):
         modes = ["rule", "dl", "hybrid"]
@@ -640,6 +657,8 @@ class VideoAnalysisThread(QThread):
 
     def run(self):
         results = []
+        estimator = None
+        cap = None
         try:
             if not MEDIAPIPE_OK:
                 self.finished_signal.emit([])
@@ -652,6 +671,7 @@ class VideoAnalysisThread(QThread):
                 print(f"[视频分析] 无法打开视频: {self.path}")
                 self.finished_signal.emit([])
                 return
+
             total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             idx = 0
 
@@ -677,11 +697,13 @@ class VideoAnalysisThread(QThread):
                 idx += 1
                 if idx % 3 == 0:
                     self.progress.emit(idx, total)
-
-            cap.release()
-            estimator.release()
         except Exception as e:
             print(f"[视频分析] 错误: {e}")
+        finally:
+            if cap is not None:
+                cap.release()
+            if estimator is not None:
+                estimator.release()
 
         self.finished_signal.emit(results)
 
