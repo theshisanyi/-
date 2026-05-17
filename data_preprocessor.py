@@ -24,7 +24,7 @@ except ImportError:
     print("[警告] mediapipe 未安装, 姿态估计功能不可用。请运行: pip install mediapipe")
 
 from config import (
-    MEDIAPIPE_CONFIG, NUM_KEYPOINTS, KEYPOINT_DIM,
+    MEDIAPIPE_CONFIG, NUM_KEYPOINTS,
     KEYPOINT_INDICES, SAMPLING_CONFIG
 )
 from utils import normalize_landmarks, motion_energy
@@ -235,18 +235,9 @@ class DataPreprocessor:
 
         return feature_seq.astype(np.float32)
 
-    def process_single_frame(self, landmarks):
-        """
-        处理单帧关键点（用于实时模式，不做时序采样）
-        Args:
-            landmarks: (V, 4) 原始关键点
-        Returns:
-            normalized: (V, 3) 归一化坐标
-        """
-        return self.normalize_skeleton(landmarks)
-
-
-class VideoProcessor:
+    def release(self):
+        """释放资源"""
+        self.estimator.release()
     """
     视频处理器: 从视频文件中提取骨架序列
 

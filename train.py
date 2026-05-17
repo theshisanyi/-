@@ -153,7 +153,7 @@ def train(train_data, train_labels, val_data=None, val_labels=None,
 
     # 加载预训练权重
     if pretrained_path and os.path.exists(pretrained_path):
-        state = torch.load(pretrained_path, map_location=device)
+        state = torch.load(pretrained_path, map_location=device, weights_only=True)
         missing, unexpected = model.load_state_dict(state, strict=False)
         print(f"[训练] 已加载预训练权重: {pretrained_path}")
         if missing:

@@ -158,11 +158,8 @@ class AdaptiveGraphConv(nn.Module):
         # 线性变换
         out = self.W(x_graph)  # (B, T, V, C_out)
 
-        # BatchNorm (reshape for BN over feature dim)
+        # BatchNorm
         out = out.permute(0, 3, 1, 2).contiguous()  # (B, C_out, T, V)
-        out = out.view(B * self.out_channels, T * V)
-        # 简化BN: 对展开的维度做BN
-        out = out.view(B, self.out_channels, T, V)
         out = self.bn(out.view(B, self.out_channels, -1)).view(B, self.out_channels, T, V)
         out = out.permute(0, 2, 3, 1).contiguous()  # (B, T, V, C_out)
 

@@ -75,6 +75,9 @@ def random_rotation(sequence, max_angle=15):
     coords_flat = coords_xy.reshape(-1, 2)  # (T*V, 2)
     rotated = coords_flat @ R.T
     seq[:, :, :2] = rotated.reshape(T, V, 2)
+    vel_xy = seq[:, :, 3:5]  # (T, V, 2)
+    vel_flat = vel_xy.reshape(-1, 2)
+    seq[:, :, 3:5] = (vel_flat @ R.T).reshape(T, V, 2)
     return seq
 
 

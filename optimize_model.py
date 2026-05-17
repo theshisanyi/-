@@ -104,7 +104,7 @@ def export_to_onnx(model, save_path=None, dynamic_batch=True, target_length=32):
         input_names=["input"],
         output_names=["output"],
         dynamic_axes=dynamic_axes,
-        opset_version=11,
+        opset_version=17,
         do_constant_folding=True,
     )
 
@@ -151,7 +151,7 @@ def optimize_model(model_path=None, save_path=None, pruning_rate=0.3,
     # 1. 加载模型
     model = HybridSTGCNTransformer().to(device)
     if model_path and os.path.exists(model_path):
-        model.load_state_dict(torch.load(model_path, map_location=device))
+        model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
         print(f"[优化] 已加载模型: {model_path}")
     else:
         print("[优化] 使用随机初始化模型")

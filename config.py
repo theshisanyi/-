@@ -127,7 +127,6 @@ PRETRAIN_CONFIG = {
 # ======================== 推理配置 ========================
 INFERENCE_CONFIG = {
     "buffer_size": 60,                    # 帧缓冲区大小
-    "target_fps": 30,                     # 目标帧率
     "smoothing_window": 5,                # 预测平滑窗口
     "onnx_model_path": os.path.join(MODEL_DIR, "hars_model.onnx"),
 }
