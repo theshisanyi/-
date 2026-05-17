@@ -90,6 +90,8 @@ class SkeletonDataset(Dataset):
             R = np.array([[cos_a, -sin_a], [sin_a, cos_a]])
             coords_xy = seq[:, :, :2].reshape(-1, 2)
             seq[:, :, :2] = (coords_xy @ R.T).reshape(seq.shape[0], seq.shape[1], 2)
+            vel_xy = seq[:, :, 3:5].reshape(-1, 2)
+            seq[:, :, 3:5] = (vel_xy @ R.T).reshape(seq.shape[0], seq.shape[1], 2)
         return seq
 
 

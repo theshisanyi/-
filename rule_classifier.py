@@ -34,7 +34,6 @@ class RuleBasedClassifier:
         self.buffer_size = buffer_size
         self.landmark_buffer = deque(maxlen=buffer_size)
         self.center_y_buffer = deque(maxlen=buffer_size)
-        self.prediction_history = deque(maxlen=10)
 
     def classify(self, landmarks):
         """
@@ -528,4 +527,4 @@ class RuleBasedClassifier:
         """重置缓冲区"""
         self.landmark_buffer.clear()
         self.center_y_buffer.clear()
-        self.prediction_history.clear()
+

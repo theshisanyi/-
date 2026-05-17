@@ -111,8 +111,6 @@ TRAIN_CONFIG = {
     "learning_rate": 1e-3,
     "weight_decay": 1e-4,
     "epochs": 100,
-    "lr_scheduler_step": 30,
-    "lr_scheduler_gamma": 0.1,
     "max_sequence_length": 64,            # 最大序列长度 T_max
     "min_sequence_length": 16,            # 最小序列长度 T_min
 }
@@ -130,10 +128,8 @@ PRETRAIN_CONFIG = {
 INFERENCE_CONFIG = {
     "buffer_size": 60,                    # 帧缓冲区大小
     "target_fps": 30,                     # 目标帧率
-    "confidence_threshold": 0.3,          # 置信度阈值
     "smoothing_window": 5,                # 预测平滑窗口
     "onnx_model_path": os.path.join(MODEL_DIR, "hars_model.onnx"),
-    "mode": "rule",                       # 推理模式: "rule" / "dl" / "hybrid"
 }
 
 # ======================== 增量学习 (EWC) 配置 ========================

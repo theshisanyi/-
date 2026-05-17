@@ -60,58 +60,8 @@ def apply_structured_pruning(model, pruning_rate=0.3):
     return model, pruned_count
 
 
-def quantization_aware_finetune(model, train_loader, epochs=3, lr=1e-4):
-    """
-    量化感知微调
-
-    在微调过程中模拟INT8量化误差, 使模型适应低精度推理
-    由于PyTorch QAT在某些层上限制较多, 这里采用简化版:
-    对权重在前向传播时应用量化-反量化操作
-
-    Args:
-        model: 待量化的模型
-        train_loader: 训练数据加载器
-        epochs: 微调轮数
-        lr: 学习率
-    """
-    print(f"\n[量化] 开始量化感知训练, Epochs: {epochs}")
-
-    device = next(model.parameters()).device
-    model.train()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
-
-    for epoch in range(epochs):
-        total_loss = 0
-        num_batches = 0
-
-        for batch_x, batch_y in train_loader:
-            batch_x = batch_x.to(device)
-            batch_y = batch_y.to(device)
-
-            optimizer.zero_grad()
-
-            # 对权重应用模拟量化
-            with torch.no_grad():
-                for param in model.parameters():
-                    if param.dim() >= 2:
-                        scale = param.abs().max() / 127.0
-                        if scale > 0:
-                            quantized = torch.round(param / scale).clamp(-128, 127)
-                            param.copy_(quantized * scale)
-
-            output = model(batch_x)
-            loss = criterion(output, batch_y)
-            loss.backward()
-            optimizer.step()
-
-            total_loss += loss.item()
-            num_batches += 1
-
-        avg_loss = total_loss / max(num_batches, 1)
-        print(f"[量化] Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
-
-    print("[量化] 量化感知训练完成")
+def quantization_aware_finetune(model, train_loader=None, epochs=3, lr=1e-4):
+    print(f"\n[量化] 量化微调已跳过 (需真实训练数据)")
     return model
 
 
@@ -211,14 +161,11 @@ def optimize_model(model_path=None, save_path=None, pruning_rate=0.3,
 
     # 3. 量化感知训练
     if quantize:
-        # 生成少量合成数据用于量化微调
-        num_samples = 100
-        T = 32
-        X = torch.randn(num_samples, T, 33, 6)
-        Y = torch.randint(0, NUM_CLASSES, (num_samples,))
-        loader = DataLoader(TensorDataset(X, Y), batch_size=16, shuffle=True)
-
-        model = quantization_aware_finetune(model, loader, epochs=quantize_epochs)
+        pt_path = os.path.join(MODEL_DIR, "hars_model.pt")
+        if os.path.exists(pt_path):
+            print("[优化] 量化微调已跳过: 暂无真实训练数据管线")
+        else:
+            print("[优化] 未找到预训练模型, 跳过量化微调")
 
     # 4. 导出ONNX
     onnx_path = export_to_onnx(model, save_path)

@@ -192,8 +192,7 @@ class VideoThread(QThread):
     def set_mode(self, mode):
         self.mode = mode
 
-    def set_source(self, source):
-        self.source = source
+
 
 
 # ================================================================
@@ -377,7 +376,7 @@ class RealTimeTab(QWidget):
         self.btn_stop.setEnabled(False)
         self.video_label.setText("📷 已停止，点击「开始识别」重新启动")
 
-    def update_frame(self, frame):
+    def _show_frame(self, frame):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb.shape
         img = QImage(rgb.data, w, h, ch * w, QImage.Format_RGB888)
@@ -385,6 +384,9 @@ class RealTimeTab(QWidget):
         scaled = pixmap.scaled(self.video_label.size(), Qt.KeepAspectRatio,
                                Qt.SmoothTransformation)
         self.video_label.setPixmap(scaled)
+
+    def update_frame(self, frame):
+        self._show_frame(frame)
 
     def update_result(self, action_id, confidence, probs):
         self.current_action = action_id
@@ -409,6 +411,8 @@ class RealTimeTab(QWidget):
 
     def update_landmarks(self, landmarks):
         self.current_landmarks = landmarks
+        if self.main_window and landmarks is not None:
+            self.main_window.feedback_frame_buffer.append(landmarks)
 
     def update_fps(self, fps):
         self.fps_label.setText(f"FPS: {fps:.1f}")
@@ -465,6 +469,13 @@ class VideoAnalysisTab(QWidget):
         top_layout.addWidget(self.btn_select)
         top_layout.addWidget(self.path_label, stretch=1)
         top_layout.addWidget(self.btn_analyze)
+
+        self.analysis_mode_combo = QComboBox()
+        self.analysis_mode_combo.addItems(["规则模式", "深度学习模式", "混合模式"])
+        self.analysis_mode_combo.setMinimumHeight(36)
+        top_layout.addWidget(QLabel("推理模式:"))
+        top_layout.addWidget(self.analysis_mode_combo)
+
         layout.addLayout(top_layout)
 
         # 进度条
@@ -548,7 +559,9 @@ class VideoAnalysisTab(QWidget):
         self.progress_bar.setVisible(True)
         self.progress_bar.setValue(0)
 
-        self.analysis_thread = VideoAnalysisThread(self.video_path)
+        modes = ["rule", "dl", "hybrid"]
+        mode = modes[self.analysis_mode_combo.currentIndex()]
+        self.analysis_thread = VideoAnalysisThread(self.video_path, mode=mode)
         self.analysis_thread.progress.connect(self.on_progress)
         self.analysis_thread.frame_processed.connect(self._show_frame)
         self.analysis_thread.finished_signal.connect(self.on_analysis_done)
@@ -616,9 +629,14 @@ class VideoAnalysisThread(QThread):
     frame_processed = pyqtSignal(np.ndarray)
     finished_signal = pyqtSignal(list)
 
-    def __init__(self, path):
+    def __init__(self, path, mode="rule"):
         super().__init__()
         self.path = path
+        self.mode = mode
+        self._stop_flag = False
+
+    def stop(self):
+        self._stop_flag = True
 
     def run(self):
         results = []
@@ -630,6 +648,10 @@ class VideoAnalysisThread(QThread):
             estimator = MediaPipeEstimator()
             engine = HybridEngine()
             cap = cv2.VideoCapture(self.path)
+            if not cap.isOpened():
+                print(f"[视频分析] 无法打开视频: {self.path}")
+                self.finished_signal.emit([])
+                return
             total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             idx = 0
 
@@ -637,10 +659,12 @@ class VideoAnalysisThread(QThread):
                 ret, frame = cap.read()
                 if not ret:
                     break
+                if self._stop_flag:
+                    break
 
                 landmarks = estimator.estimate(frame)
                 if landmarks is not None:
-                    action_id, conf, probs, _m = engine.predict(landmarks, mode="rule")
+                    action_id, conf, probs, _m = engine.predict(landmarks, mode=self.mode)
                     results.append(action_id)
 
                     display = frame.copy()
@@ -1012,6 +1036,9 @@ class ArchitectureTab(QWidget):
 class MainWindow(QMainWindow):
     """HARS 系统主窗口"""
 
+    train_progress_signal = pyqtSignal(int, int, float)
+    train_complete_signal = pyqtSignal(bool, str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("基于深度学习的人体行为识别系统 (HARS)")
@@ -1020,6 +1047,7 @@ class MainWindow(QMainWindow):
 
         # 反馈缓冲区和预处理器
         self.feedback_buffer = FeedbackBuffer()
+        self.feedback_frame_buffer = deque(maxlen=32)
         self.preprocessor = DataPreprocessor()
         self.bg_updater = None
         self.model_version = 1
@@ -1031,6 +1059,9 @@ class MainWindow(QMainWindow):
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self._update_status)
         self.status_timer.start(2000)
+
+        self.train_progress_signal.connect(self._on_train_progress_safe)
+        self.train_complete_signal.connect(self._on_train_complete_safe)
 
     def _init_ui(self):
         central = QWidget()
@@ -1098,83 +1129,72 @@ class MainWindow(QMainWindow):
             return
 
         if not is_correct:
-            # 将关键点序列存入反馈缓冲区
-            coords = self.preprocessor.process_single_frame(landmarks)
-            if coords is not None:
-                # process_single_frame returns (V,3) coords; append zero velocity → (V,6)
-                velocity = np.zeros_like(coords)
-                features = np.concatenate([coords, velocity], axis=-1)  # (V,6)
-                # 创建一个短序列 (重复当前帧)
-                short_seq = np.tile(features[np.newaxis, :, :], (16, 1, 1))
-                self.feedback_buffer.add(short_seq, label)
-
-                self.tab_feedback.train_log.append(
-                    f"收到反馈: 纠正为「{ACTION_CLASSES[label]}」 "
-                    f"(缓存: {self.feedback_buffer.size()}/{self.feedback_buffer.capacity})"
-                )
-
-                # 检查是否触发微调
-                if self.feedback_buffer.is_full():
-                    self.trigger_incremental_learning()
+            buf = list(self.feedback_frame_buffer)
+            if len(buf) >= 8:
+                features = self.preprocessor.process_sequence(buf)
+                if features is not None:
+                    self.feedback_buffer.add(features, label)
+                    self.tab_feedback.train_log.append(
+                        f"收到反馈: 纠正为「{ACTION_CLASSES[label]}」 "
+                        f"(缓存: {self.feedback_buffer.size()}/{self.feedback_buffer.capacity})"
+                    )
+                    if self.feedback_buffer.is_full():
+                        self.trigger_incremental_learning()
+            else:
+                self.tab_feedback.train_log.append("⚠ 反馈数据不足: 请在识别一段时间后再纠正")
         else:
             self.tab_feedback.train_log.append("收到反馈: 结果正确 ✓")
 
     def trigger_incremental_learning(self, force=False):
-        """触发增量学习"""
         if self.bg_updater and self.bg_updater.is_running():
             self.tab_feedback.train_log.append("⚠ 微调正在进行中, 请稍候...")
             return
-
         if not force and self.feedback_buffer.size() < 5:
             self.tab_feedback.train_log.append("⚠ 反馈数据不足 (至少需要5条)")
             return
-
         self.tab_feedback.train_log.append("🧠 触发EWC增量学习...")
         self.tab_feedback.learn_status_label.setText("🔄 正在微调...")
-
+        
+        def _bridge_progress(epoch, total, loss):
+            self.train_progress_signal.emit(epoch, total, loss)
+        def _bridge_complete(success, model_path):
+            self.train_complete_signal.emit(success, model_path)
+        
         self.bg_updater = BackgroundUpdater(
             self.feedback_buffer,
-            on_complete=self._on_train_complete,
-            on_progress=self._on_train_progress,
+            on_complete=_bridge_complete,
+            on_progress=_bridge_progress,
         )
         self.bg_updater.start()
 
-    def _on_train_progress(self, epoch, total, loss):
-        """微调进度回调 (从后台线程调用)"""
-        # 注意: 这个回调在后台线程中, 需要使用信号或QTimer来更新GUI
-        # 简化处理: 直接调用 (PyQt5在某些情况下可以跨线程)
-        try:
-            self.tab_feedback.on_train_progress(epoch, total, loss)
-        except Exception:
-            pass
+    def _on_train_progress_safe(self, epoch, total, loss):
+        self.tab_feedback.on_train_progress(epoch, total, loss)
 
-    def _on_train_complete(self, success, model_path):
-        """微调完成回调"""
-        try:
-            self.tab_feedback.on_train_complete(success)
-            if success:
-                self.model_version += 1
-                self.tab_feedback.model_version_label.setText(
-                    f"v{self.model_version} (EWC更新)"
-                )
-                # 热更新推理模型
-                if hasattr(self.tab_realtime, 'video_thread') and \
-                   self.tab_realtime.video_thread and \
-                   self.tab_realtime.video_thread.engine:
-                    self.tab_realtime.video_thread.engine.hot_reload_dl_model(model_path)
-        except Exception as e:
-            print(f"[错误] 更新回调失败: {e}")
+    def _on_train_complete_safe(self, success, model_path):
+        self.tab_feedback.on_train_complete(success)
+        if success:
+            self.model_version += 1
+            self.tab_feedback.model_version_label.setText(
+                f"v{self.model_version} (EWC更新)"
+            )
+            if hasattr(self.tab_realtime, 'video_thread') and \
+               self.tab_realtime.video_thread and \
+               self.tab_realtime.video_thread.engine:
+                self.tab_realtime.video_thread.engine.hot_reload_dl_model(model_path)
 
     def closeEvent(self, event):
-        """窗口关闭事件"""
-        # 停止视频线程
         if self.tab_realtime.video_thread is not None:
             self.tab_realtime.video_thread.stop()
-
-        # 保存反馈数据
+        if hasattr(self.tab_video, 'analysis_thread') and \
+           self.tab_video.analysis_thread is not None and \
+           self.tab_video.analysis_thread.isRunning():
+            self.tab_video.analysis_thread.stop()
+            self.tab_video.analysis_thread.wait(3000)
+        if self.bg_updater and self.bg_updater.is_running():
+            self.bg_updater.join(timeout=5000)
+        self.status_timer.stop()
         if self.feedback_buffer.size() > 0:
             self.feedback_buffer.save_to_disk()
-
         event.accept()
 
 

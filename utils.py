@@ -39,26 +39,6 @@ def calculate_distance(p1, p2):
     return np.linalg.norm(np.array(p1) - np.array(p2))
 
 
-def calculate_body_height(landmarks):
-    """
-    估算人体从头到脚的身高 (归一化坐标下)
-    """
-    if landmarks is None or len(landmarks) < NUM_KEYPOINTS:
-        return 0
-    nose = landmarks[KEYPOINT_INDICES["nose"]]
-    left_ankle = landmarks[KEYPOINT_INDICES["left_ankle"]]
-    right_ankle = landmarks[KEYPOINT_INDICES["right_ankle"]]
-    mid_ankle = (np.array(left_ankle[:2]) + np.array(right_ankle[:2])) / 2
-    return abs(nose[1] - mid_ankle[1])
-
-
-def calculate_body_center(landmarks):
-    """计算身体质心 (髋部中心)"""
-    left_hip = np.array(landmarks[KEYPOINT_INDICES["left_hip"]][:3])
-    right_hip = np.array(landmarks[KEYPOINT_INDICES["right_hip"]][:3])
-    return (left_hip + right_hip) / 2
-
-
 def calculate_body_tilt(landmarks):
     """
     计算身体倾斜角度 (肩膀中点与髋部中点连线 与 垂直方向 的夹角)
@@ -183,30 +163,6 @@ def draw_fps(frame, fps):
     text = f"FPS: {fps:.1f}"
     cv2.putText(frame, text, (w - 160, 35), cv2.FONT_HERSHEY_SIMPLEX,
                 0.8, COLORS["accent"], 2, cv2.LINE_AA)
-    return frame
-
-
-def draw_info_panel(frame, info_dict, start_y=100):
-    """
-    在帧右侧绘制信息面板
-    Args:
-        info_dict: {"标签": "值", ...}
-    """
-    h, w = frame.shape[:2]
-    x = w - 300
-    y = start_y
-
-    # 半透明背景
-    overlay = frame.copy()
-    cv2.rectangle(overlay, (x - 10, y - 25), (w - 10, y + len(info_dict) * 30 + 5),
-                  (20, 20, 30), -1)
-    cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
-
-    for key, value in info_dict.items():
-        cv2.putText(frame, f"{key}: {value}", (x, y),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 200, 220), 1, cv2.LINE_AA)
-        y += 28
-
     return frame
 
 

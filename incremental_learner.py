@@ -39,6 +39,7 @@ class FeedbackBuffer:
     def __init__(self, capacity=None):
         self.capacity = capacity or EWC_CONFIG["buffer_capacity"]
         self.buffer = deque(maxlen=self.capacity)
+        self.lock = threading.Lock()
         self.save_dir = FEEDBACK_DIR
         os.makedirs(self.save_dir, exist_ok=True)
 
@@ -50,15 +51,17 @@ class FeedbackBuffer:
             features: (T, V, C) numpy数组, 预处理后的骨架序列
             label: int, 正确的动作标签 (0-9)
         """
-        self.buffer.append({
-            "features": features.copy(),
-            "label": int(label),
-            "timestamp": datetime.now().isoformat(),
-        })
+        with self.lock:
+            self.buffer.append({
+                "features": features.copy(),
+                "label": int(label),
+                "timestamp": datetime.now().isoformat(),
+            })
 
     def is_full(self):
         """检查缓冲区是否达到容量"""
-        return len(self.buffer) >= self.capacity
+        with self.lock:
+            return len(self.buffer) >= self.capacity
 
     def get_data(self):
         """
@@ -68,17 +71,20 @@ class FeedbackBuffer:
             features_list: list of (T, V, C) numpy数组
             labels_list: list of int
         """
-        features = [item["features"] for item in self.buffer]
-        labels = [item["label"] for item in self.buffer]
-        return features, labels
+        with self.lock:
+            features = [item["features"] for item in self.buffer]
+            labels = [item["label"] for item in self.buffer]
+            return features, labels
 
     def clear(self):
         """清空缓冲区"""
-        self.buffer.clear()
+        with self.lock:
+            self.buffer.clear()
 
     def size(self):
         """当前样本数"""
-        return len(self.buffer)
+        with self.lock:
+            return len(self.buffer)
 
     def save_to_disk(self):
         """将反馈数据保存到磁盘"""
@@ -113,7 +119,7 @@ class EWCTrainer:
     - λ: EWC正则化强度
     """
 
-    def __init__(self, model=None, ewc_lambda=None):
+    def __init__(self, model=None, ewc_lambda=None, fisher_path=None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.ewc_lambda = ewc_lambda or EWC_CONFIG["ewc_lambda"]
 
@@ -126,6 +132,15 @@ class EWCTrainer:
         # Fisher信息矩阵和旧参数
         self.fisher_dict = {}
         self.optpar_dict = {}
+
+        if fisher_path and os.path.exists(fisher_path):
+            try:
+                saved = torch.load(fisher_path, map_location="cpu", weights_only=True)
+                self.fisher_dict = saved.get("fisher", {})
+                self.optpar_dict = saved.get("optpar", {})
+                print(f"[EWC] 已加载历史Fisher矩阵: {fisher_path}")
+            except Exception as e:
+                print(f"[EWC] 无法加载Fisher矩阵: {e}")
 
     def compute_fisher(self, dataloader):
         """
@@ -168,6 +183,41 @@ class EWCTrainer:
         self.fisher_dict = fisher_dict
         self.optpar_dict = optpar_dict
         print(f"[EWC] Fisher信息矩阵计算完成, 参数组数: {len(fisher_dict)}")
+
+    def _update_fisher(self, dataloader, ema_decay=0.9):
+        self.model.eval()
+        new_fisher = {}
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                new_fisher[name] = torch.zeros_like(param.data)
+        criterion = nn.CrossEntropyLoss()
+        for batch_x, batch_y in dataloader:
+            batch_x = batch_x.to(self.device)
+            batch_y = batch_y.to(self.device)
+            self.model.zero_grad()
+            output = self.model(batch_x)
+            loss = criterion(output, batch_y)
+            loss.backward()
+            for name, param in self.model.named_parameters():
+                if param.requires_grad and param.grad is not None:
+                    new_fisher[name] += param.grad.data ** 2
+        num_samples = len(dataloader.dataset)
+        for name in new_fisher:
+            new_fisher[name] /= max(num_samples, 1)
+        if not self.optpar_dict:
+            for name, param in self.model.named_parameters():
+                if param.requires_grad:
+                    self.optpar_dict[name] = param.data.clone()
+        for name in self.fisher_dict:
+            if name in new_fisher:
+                self.fisher_dict[name] = ema_decay * self.fisher_dict[name] + \
+                                         (1 - ema_decay) * new_fisher[name]
+            else:
+                self.fisher_dict[name] = new_fisher[name]
+        for name in new_fisher:
+            if name not in self.fisher_dict:
+                self.fisher_dict[name] = new_fisher[name]
+        print(f"[EWC] Fisher矩阵EMA更新完成, decay={ema_decay}")
 
     def ewc_loss(self):
         """
@@ -254,8 +304,8 @@ class EWCTrainer:
 
             print(f"[EWC微调] Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
 
-        # 更新Fisher矩阵
-        self.compute_fisher(dataloader)
+        # 更新Fisher矩阵 (EMA融合, 不覆盖旧知识)
+        self._update_fisher(dataloader, ema_decay=0.9)
 
         return True
 
@@ -265,6 +315,11 @@ class EWCTrainer:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             save_path = os.path.join(MODEL_DIR, f"model_finetuned_{timestamp}.pt")
         torch.save(self.model.state_dict(), save_path)
+        fisher_path = save_path.replace(".pt", "_fisher.pt")
+        torch.save({
+            "fisher": self.fisher_dict,
+            "optpar": self.optpar_dict,
+        }, fisher_path)
         print(f"[EWC] 模型已保存: {save_path}")
         return save_path
 
@@ -284,7 +339,7 @@ class EWCTrainer:
                 "input": {0: "batch", 1: "time"},
                 "output": {0: "batch"},
             },
-            opset_version=11,
+            opset_version=17,
         )
         print(f"[EWC] ONNX模型已导出: {save_path}")
         return save_path
@@ -326,14 +381,15 @@ class BackgroundUpdater(threading.Thread):
                 return
 
             # 创建训练器
-            self.trainer = EWCTrainer()
+            fisher_path = os.path.join(MODEL_DIR, "hars_model_fisher.pt")
+            self.trainer = EWCTrainer(fisher_path=fisher_path)
 
             # 尝试加载当前最优模型
             model_path = os.path.join(MODEL_DIR, "hars_model.pt")
             if os.path.exists(model_path):
                 try:
                     self.trainer.model.load_state_dict(
-                        torch.load(model_path, map_location="cpu")
+                        torch.load(model_path, map_location="cpu", weights_only=True)
                     )
                     print(f"[后台更新] 已加载基础模型: {model_path}")
                 except Exception as e:

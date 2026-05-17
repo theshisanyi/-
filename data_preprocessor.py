@@ -35,15 +35,21 @@ _POSE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "pose_landm
 
 
 def _ensure_pose_model():
-    """确保姿态模型已下载"""
     if os.path.exists(_POSE_MODEL_PATH):
         return _POSE_MODEL_PATH
     os.makedirs(os.path.dirname(_POSE_MODEL_PATH), exist_ok=True)
     url = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
     print(f"[MediaPipe] 正在下载姿态模型...")
-    import urllib.request
-    urllib.request.urlretrieve(url, _POSE_MODEL_PATH)
-    print(f"[MediaPipe] 下载完成: {_POSE_MODEL_PATH}")
+    print(f"[MediaPipe] 下载URL: {url}")
+    print(f"[MediaPipe] 保存到: {_POSE_MODEL_PATH}")
+    print(f"[MediaPipe] 如下载失败, 请手动下载并放到上述路径")
+    try:
+        import urllib.request
+        urllib.request.urlretrieve(url, _POSE_MODEL_PATH)
+        print(f"[MediaPipe] 下载完成: {_POSE_MODEL_PATH}")
+    except Exception as e:
+        print(f"[MediaPipe] 下载失败: {e}")
+        print(f"[MediaPipe] 系统将尝试继续运行, 但 MediaPipe 可能不可用")
     return _POSE_MODEL_PATH
 
 
@@ -65,6 +71,7 @@ class MediaPipeEstimator:
             base_options = MpBaseOptions(model_asset_buffer=model_bytes)
         except Exception as e:
             print(f"[MediaPipe] 读取模型文件失败: {e}")
+            print(f"[MediaPipe] 尝试使用路径方式加载...")
             base_options = MpBaseOptions(model_asset_path=model_path)
 
         options = mp_vision.PoseLandmarkerOptions(
@@ -169,12 +176,10 @@ class DataPreprocessor:
         if T <= self.min_frames:
             return self._resample_sequence(seq, self.min_frames)
 
-        # 计算运动量
         M = motion_energy(seq[:, :, :3])
-        M_max = max(M, 1e-6)
-
-        # 动态目标帧数
-        ratio = min(M / (M_max * 2 + 1e-6), 1.0)  # 防止超过1
+        avg_motion_per_frame = M / max(T - 1, 1)
+        reference_motion = 0.05
+        ratio = min(avg_motion_per_frame / (reference_motion + 1e-6), 1.0)
         T_target = int(self.min_frames + self.alpha * ratio * (self.max_frames - self.min_frames))
         T_target = max(self.min_frames, min(T_target, self.max_frames, T))
 
@@ -191,11 +196,8 @@ class DataPreprocessor:
         original_indices = np.linspace(0, T - 1, T)
         target_indices = np.linspace(0, T - 1, target_length)
 
-        resampled = np.zeros((target_length, V, C), dtype=np.float32)
-        for v in range(V):
-            for c in range(C):
-                f = interp1d(original_indices, sequence[:, v, c], kind='linear')
-                resampled[:, v, c] = f(target_indices)
+        f = interp1d(original_indices, sequence, axis=0, kind='linear')
+        resampled = f(target_indices).astype(np.float32)
 
         return resampled
 
