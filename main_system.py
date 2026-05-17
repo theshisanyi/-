@@ -1179,6 +1179,19 @@ class MainWindow(QMainWindow):
                 self.tab_feedback.train_log.append("[!] 反馈数据不足: 请在识别一段时间后再纠正")
         else:
             self.tab_feedback.train_log.append("收到反馈: 结果正确 [OK]")
+            # 立即更新 UI: 确认用户认可当前识别结果
+            en_label = ACTION_CLASSES_EN.get(label, "OK")
+            current_conf = self.tab_realtime.current_confidence
+            self.tab_realtime.action_label.setText(
+                f"[OK] {ACTION_CLASSES.get(label, '')}\n{en_label}"
+            )
+            self.tab_realtime.confidence_bar.setValue(int(current_conf * 100))
+            # 把确认结果写入 prediction_history, 强化模型对正确结果的信心
+            if (self.tab_realtime.video_thread is not None and
+                    self.tab_realtime.video_thread.isRunning()):
+                self.tab_realtime.video_thread.prediction_history.append(
+                    (label, max(current_conf, 0.8))
+                )
 
     def trigger_incremental_learning(self, force=False):
         if self.bg_updater and self.bg_updater.is_running():
