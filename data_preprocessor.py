@@ -243,6 +243,9 @@ class DataPreprocessor:
     def release(self):
         """释放资源"""
         self.estimator.release()
+
+
+class VideoProcessor:
     """
     视频处理器: 从视频文件中提取骨架序列
 
