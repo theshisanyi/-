@@ -1160,6 +1160,19 @@ class MainWindow(QMainWindow):
                         f"收到反馈: 纠正为「{ACTION_CLASSES[label]}」 "
                         f"(缓存: {self.feedback_buffer.size()}/{self.feedback_buffer.capacity})"
                     )
+                    # 立即更新 UI: 用修正标签覆盖当前显示
+                    corrected_probs = np.zeros(NUM_CLASSES, dtype=float)
+                    corrected_probs[label] = 1.0
+                    self.tab_realtime.update_result(label, 1.0, corrected_probs)
+                    self.tab_realtime.action_label.setText(
+                        f"[Corrected]\n{ACTION_CLASSES_EN.get(label, '')}"
+                    )
+                    # 把修正结果写入 prediction_history, 防止下一帧平滑算法冲掉
+                    if (self.tab_realtime.video_thread is not None and
+                            self.tab_realtime.video_thread.isRunning()):
+                        self.tab_realtime.video_thread.prediction_history.append(
+                            (label, 1.0)
+                        )
                     if self.feedback_buffer.is_full():
                         self.trigger_incremental_learning()
             else:
